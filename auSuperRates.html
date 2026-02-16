@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AusSuper International Shares (Text Search)</title>
+<title>AusSuper International Shares (6 Proxies)</title>
 <style>
   body { 
     font-family: Arial, sans-serif; 
@@ -38,102 +38,106 @@
     margin: 15px 0; 
   }
   #debug { 
-    font-size: 0.8em; 
+    font-size: 0.9em; 
     color: #888; 
     background: #f0f0f0; 
-    padding: 10px; 
-    border-radius: 5px; 
+    padding: 15px; 
+    border-radius: 8px; 
     margin: 10px 0;
-    max-height: 100px;
+    max-height: 120px;
     overflow-y: auto;
+    font-family: monospace;
   }
 </style>
 </head>
 <body>
 
 <h1>🤑 AusSuper International Shares</h1>
-<div class="status" id="status">Loading...</div>
+<div class="status" id="status">Trying 6 proxies...</div>
 <div id="output">⏳</div>
 <div id="debug"></div>
-<button id="refreshBtn">🔄 Refresh</button>
+<button id="refreshBtn">🔄 Try Again</button>
 
 <script>
 const TARGET_URL = 'https://www.australiansuper.com/why-choose-us/our-performance?superType=Super&display=table';
+
+const PROXIES = [
+  'https://api.allorigins.win/raw?url=',
+  'https://corsproxy.io/?',
+  'https://thingproxy.freeboard.io/fetch/',
+  'https://api.codetabs.com/v1/proxy?quest=',
+  'https://corsproxy.org/?',
+  'https://proxy.cors.sh/'
+];
 
 async function scrapeData() {
   const status = document.getElementById('status');
   const output = document.getElementById('output');
   const debug = document.getElementById('debug');
   
-  status.textContent = 'Searching for International Shares row...';
+  status.textContent = '⏳ Trying proxies...';
   output.textContent = '⏳';
-  debug.textContent = '';
+  debug.innerHTML = '';
   
-  try {
-    // Fetch via CORS proxy
-    const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(TARGET_URL);
-    const response = await fetch(proxyUrl);
-    const html = await response.text();
+  for (let i = 0; i < PROXIES.length; i++) {
+    const proxy = PROXIES[i];
+    debug.innerHTML += `<strong>Proxy ${i+1}: ${proxy.substring(0, 30)}...</strong><br>`;
     
-    // SEARCH for the exact marker
-    const marker = 'diy-mixed-investment-choice">International Shares</a></th>';
-    const markerIndex = html.indexOf(marker);
-    
-    if (markerIndex === -1) {
-      throw new Error('International Shares marker not found');
-    }
-    
-    debug.textContent = `✅ Found marker at position ${markerIndex}`;
-    
-    // Find the START of the <tr> (go backwards from marker)
-    let trStart = html.lastIndexOf('<tr', markerIndex);
-    let trEnd = html.indexOf('</tr>', markerIndex);
-    
-    if (trStart === -1 || trEnd === -1) {
-      throw new Error('TR tags not found');
-    }
-    
-    // Extract the entire row
-    const rowHtml = html.substring(trStart, trEnd + 5);
-    debug.textContent += `\n\nROW HTML:\n${rowHtml.substring(0, 300)}...`;
-    
-    // Extract ALL percentages from the row (everything with % sign)
-    const percentMatches = rowHtml.match(/-?\d+\.?\d*%+/g) || [];
-    debug.textContent += `\n\nFOUND PERCENTS:\n${percentMatches.join('\n')}`;
-    
-    // Find LAST non-zero percentage
-    let lastNonZero = null;
-    for (let i = percentMatches.length - 1; i >= 0; i--) {
-      const pctStr = percentMatches[i].replace('%', '');
-      const value = parseFloat(pctStr);
+    try {
+      const response = await fetch(proxy + encodeURIComponent(TARGET_URL));
+      const html = await response.text();
+      debug.innerHTML += `✅ SUCCESS!<br>`;
       
-      if (!isNaN(value) && Math.abs(value) > 0.0001) {
-        lastNonZero = value;
-        debug.textContent += `\n✅ LAST NON-ZERO: ${pctStr}%`;
-        break;
+      // SEARCH for International Shares marker
+      const marker = 'diy-mixed-investment-choice">International Shares</a></th>';
+      const markerIndex = html.indexOf(marker);
+      
+      if (markerIndex === -1) {
+        debug.innerHTML += `❌ Marker not found<br>`;
+        continue;
       }
+      
+      // Extract row
+      const trStart = html.lastIndexOf('<tr', markerIndex);
+      const trEnd = html.indexOf('</tr>', markerIndex);
+      const rowHtml = html.substring(trStart, trEnd + 5);
+      
+      // Extract percentages
+      const percents = rowHtml.match(/-?\d+\.?\d*%+/g) || [];
+      debug.innerHTML += `Found ${percents.length} percents: ${percents.join(', ')}<br>`;
+      
+      // LAST non-zero
+      let lastNonZero = null;
+      for (let j = percents.length - 1; j >= 0; j--) {
+        const val = parseFloat(percents[j].replace('%', ''));
+        if (!isNaN(val) && Math.abs(val) > 0.0001) {
+          lastNonZero = val;
+          break;
+        }
+      }
+      
+      if (lastNonZero === null) {
+        output.textContent = 'Currently no change.';
+        output.style.color = '#666';
+      } else {
+        output.textContent = lastNonZero.toFixed(4) + '%';
+        output.style.color = lastNonZero >= 0 ? '#00aa44' : '#cc0000';
+      }
+      
+      status.textContent = `✅ Proxy ${i+1} worked!`;
+      return;
+      
+    } catch (error) {
+      debug.innerHTML += `❌ ${error.message}<br><br>`;
     }
-    
-    if (lastNonZero === null) {
-      output.textContent = 'Currently no change.';
-      output.style.color = '#666';
-      status.textContent = '✅ All zeros in row';
-    } else {
-      const displayPct = lastNonZero.toFixed(4);
-      output.textContent = `${displayPct}%`;
-      output.style.color = lastNonZero >= 0 ? '#00aa44' : '#cc0000';
-      status.textContent = `✅ Latest move: ${lastNonZero >= 0 ? '↑' : '↓'}${Math.abs(lastNonZero).toFixed(4)}%`;
-    }
-    
-  } catch (error) {
-    status.textContent = `❌ ${error.message}`;
-    output.textContent = 'Failed';
-    output.style.color = '#cc0000';
-    debug.textContent += `\nERROR: ${error.message}`;
   }
+  
+  status.textContent = '❌ All 6 proxies failed';
+  output.textContent = 'Failed';
+  output.style.color = '#cc0000';
 }
 
-// Auto-run
+// Auto-run + button
 scrapeData();
 document.getElementById('refreshBtn').addEventListener('click', scrapeData);
 </script>
