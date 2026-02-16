@@ -1,19 +1,16 @@
-export const config = {
-  runtime: "edge"
-};
-
-export default async function handler(request) {
+export default async function handler(req, res) {
 
   try {
 
-    // Dynamically generate date range
-    // (last 14 days ensures we always catch latest update)
+    // Dynamic date range (last 14 days)
 
     const today = new Date();
+
     const endDate = today.toLocaleDateString("en-GB");
-    
+
     const start = new Date();
     start.setDate(start.getDate() - 14);
+
     const startDate = start.toLocaleDateString("en-GB");
 
     const csvURL =
@@ -23,10 +20,7 @@ export default async function handler(request) {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
-      },
-
-      // Edge cache — massive performance boost
-      next: { revalidate: 3600 } // cache 1 hour
+      }
     });
 
     if (!response.ok) {
@@ -39,10 +33,6 @@ export default async function handler(request) {
       .split("\n")
       .map(l => l.trim())
       .filter(Boolean);
-
-    if (lines.length < 2) {
-      throw new Error("CSV has insufficient data");
-    }
 
     const headers = lines[0].split(",").map(h => h.trim());
 
@@ -57,7 +47,6 @@ export default async function handler(request) {
     let latestValue = null;
     let latestDate = null;
 
-    // Walk backwards to find latest non-zero entry
     for (let i = lines.length - 1; i > 0; i--) {
 
       const cols = lines[i].split(",").map(c => c.trim());
@@ -71,28 +60,17 @@ export default async function handler(request) {
       }
     }
 
-    return new Response(
-      JSON.stringify({
-        value: latestValue !== null ? latestValue.toFixed(4) : null,
-        date: latestDate,
-        fetchedAt: new Date().toISOString()
-      }),
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "Cache-Control": "public, max-age=3600"
-        }
-      }
-    );
+    res.status(200).json({
+      value: latestValue !== null ? latestValue.toFixed(4) : null,
+      date: latestDate,
+      fetchedAt: new Date().toISOString()
+    });
 
   } catch (err) {
 
-    return new Response(
-      JSON.stringify({
-        error: err.message
-      }),
-      { status: 500 }
-    );
+    res.status(500).json({
+      error: err.message
+    });
 
   }
 }
