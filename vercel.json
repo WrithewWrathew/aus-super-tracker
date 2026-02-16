@@ -1,0 +1,8 @@
+{
+  "functions": {
+    "api/fetchCsv.js": {
+      "memory": 128,
+      "maxDuration": 30
+    }
+  }
+}
