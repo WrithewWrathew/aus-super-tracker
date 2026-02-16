@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AusSuper International Shares</title>
+<title>AusSuper International Shares - FIXED</title>
 <style>
   body { font-family: Arial, sans-serif; padding: 40px; max-width: 600px; margin: auto; background: #f5f5f5; }
   #output { font-size: 2.5em; margin: 30px 0; padding: 20px; background: white; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
@@ -11,6 +11,7 @@
   button:disabled { background: #ccc; cursor: not-allowed; }
   input[type="file"] { margin: 20px 0; }
   .instructions { background: #e7f3ff; padding: 15px; border-radius: 6px; margin: 20px 0; }
+  #debug { font-size: 0.8em; color: #666; margin-top: 10px; }
 </style>
 </head>
 <body>
@@ -18,12 +19,13 @@
 <h1>🤑 AusSuper International Shares Tracker</h1>
 
 <div class="instructions">
-  <strong>Step 1:</strong> Visit <a href="https://www.australiansuper.com//api/graphs/dailyrates/download/?start=01/02/2026&end=08/02/2026&cumulative=False&superType=super&truncateDecimalPlaces=True&outputFilename=temp.csv" target="_blank">this URL</a> and download <code>temp.csv</code><br>
-  <strong>Step 2:</strong> Click "Choose File" below and select the CSV
+  <strong>Step 1:</strong> Download <a href="https://www.australiansuper.com//api/graphs/dailyrates/download/?start=01/02/2026&end=08/02/2026&cumulative=False&superType=super&truncateDecimalPlaces=True&outputFilename=temp.csv" target="_blank">temp.csv</a><br>
+  <strong>Step 2:</strong> Click "Choose File" → Should work instantly!
 </div>
 
 <input type="file" id="fileInput" accept=".csv">
-<div id="output">Choose the temp.csv file to see the latest International Shares move</div>
+<div id="output">Choose temp.csv to see latest International Shares move</div>
+<div id="debug"></div>
 <button id="rescanBtn" disabled>🔄 Re-Scan Same File</button>
 
 <script>
@@ -31,47 +33,71 @@ let lastFile = null;
 
 function processCsv(text) {
   const output = document.getElementById("output");
-  const rows = text.trim().split(/\r?\n/);
+  const debug = document.getElementById("debug");
+  
+  // Fix Windows line endings and trim
+  const cleanText = text.replace(/\r\n?/g, '\n').trim();
+  const rows = cleanText.split('\n');
+  
+  debug.textContent = `Found ${rows.length} rows`;
   
   if (rows.length < 2) {
-    output.textContent = "No data in CSV.";
+    output.textContent = "No data rows found.";
     return;
   }
 
-  const headers = rows[0].split(",");
+  // Parse headers more robustly (handle extra spaces/quotes)
+  const headers = rows[0].split(',').map(h => h.trim().replace(/"/g, ''));
   const intlIndex = headers.indexOf("International Shares");
+  
+  debug.textContent = `Headers: ${headers.slice(0,3).join(', ')}... | International Shares at index ${intlIndex}`;
   
   if (intlIndex === -1) {
     output.textContent = "'International Shares' column not found.";
+    debug.textContent += ` (checked: ${headers.join(', ')})`;
     return;
   }
 
-  // Find last non-empty row
+  // Find last row with actual data (not all zeros)
   let lastRow = null;
   for (let i = rows.length - 1; i > 0; i--) {
-    const cols = rows[i].split(",");
-    const hasData = cols.some(col => col.trim() && col.trim() !== "0");
-    if (hasData) {
+    if (!rows[i].trim()) continue;
+    
+    // Split more robustly - handle values with commas or extra spaces
+    const cols = rows[i].split(',').map(c => c.trim());
+    
+    // Check if this row has non-zero data anywhere
+    const hasRealData = cols.slice(1).some(col => {
+      const num = parseFloat(col.replace(/"/g, ''));
+      return !isNaN(num) && num !== 0;
+    });
+    
+    if (hasRealData) {
       lastRow = cols;
+      debug.textContent += ` | Using row ${i}: ${cols[intlIndex]}`;
       break;
     }
   }
 
   if (!lastRow) {
     output.textContent = "Currently no change.";
+    output.style.color = '#666';
     return;
   }
 
-  const intlValue = parseFloat(lastRow[intlIndex].trim());
+  const intlValueStr = lastRow[intlIndex].replace(/"/g, '');
+  const intlValue = parseFloat(intlValueStr);
   
   if (isNaN(intlValue) || intlValue === 0) {
     output.textContent = "Currently no change.";
+    output.style.color = '#666';
     return;
   }
 
   const pct = intlValue.toFixed(2);
-  output.textContent = `${pct === '0.00' ? 'Currently no change.' : pct + '%'} `;
+  output.textContent = `${pct}%`;
   output.style.color = intlValue >= 0 ? '#00aa00' : '#cc0000';
+  debug.textContent += ` | International Shares: ${intlValueStr} → ${pct}%`;
 }
 
 document.getElementById("fileInput").addEventListener("change", (e) => {
@@ -79,14 +105,20 @@ document.getElementById("fileInput").addEventListener("change", (e) => {
   if (file) {
     lastFile = file;
     document.getElementById("rescanBtn").disabled = false;
+    document.getElementById("output").textContent = "Reading file...";
+    
     const reader = new FileReader();
     reader.onload = (e) => processCsv(e.target.result);
+    reader.onerror = () => {
+      document.getElementById("output").textContent = "Error reading file.";
+    };
     reader.readAsText(file);
   }
 });
 
 document.getElementById("rescanBtn").addEventListener("click", () => {
   if (lastFile) {
+    document.getElementById("output").textContent = "Re-scanning...";
     const reader = new FileReader();
     reader.onload = (e) => processCsv(e.target.result);
     reader.readAsText(lastFile);
