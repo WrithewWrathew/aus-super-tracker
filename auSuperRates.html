@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AusSuper International Shares (Live Scrape)</title>
+<title>AusSuper International Shares (Text Search)</title>
 <style>
   body { 
     font-family: Arial, sans-serif; 
@@ -37,14 +37,25 @@
     color: #666; 
     margin: 15px 0; 
   }
+  #debug { 
+    font-size: 0.8em; 
+    color: #888; 
+    background: #f0f0f0; 
+    padding: 10px; 
+    border-radius: 5px; 
+    margin: 10px 0;
+    max-height: 100px;
+    overflow-y: auto;
+  }
 </style>
 </head>
 <body>
 
 <h1>🤑 AusSuper International Shares</h1>
-<div class="status" id="status">Loading live data...</div>
+<div class="status" id="status">Loading...</div>
 <div id="output">⏳</div>
-<button id="refreshBtn">🔄 Refresh Live Data</button>
+<div id="debug"></div>
+<button id="refreshBtn">🔄 Refresh</button>
 
 <script>
 const TARGET_URL = 'https://www.australiansuper.com/why-choose-us/our-performance?superType=Super&display=table';
@@ -52,38 +63,53 @@ const TARGET_URL = 'https://www.australiansuper.com/why-choose-us/our-performanc
 async function scrapeData() {
   const status = document.getElementById('status');
   const output = document.getElementById('output');
+  const debug = document.getElementById('debug');
   
-  status.textContent = '⏳ Fetching performance page...';
+  status.textContent = 'Searching for International Shares row...';
   output.textContent = '⏳';
+  debug.textContent = '';
   
   try {
-    // Use CORS proxy to fetch the HTML page
+    // Fetch via CORS proxy
     const proxyUrl = 'https://api.allorigins.win/raw?url=' + encodeURIComponent(TARGET_URL);
     const response = await fetch(proxyUrl);
     const html = await response.text();
     
-    // Parse HTML with DOMParser
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    // SEARCH for the exact marker
+    const marker = 'diy-mixed-investment-choice">International Shares</a></th>';
+    const markerIndex = html.indexOf(marker);
     
-    // Find International Shares row
-    const intlRow = doc.querySelector('th a[href*="/investments/your-investment-options/diy-mixed-investment-choice"]')?.closest('tr');
-    
-    if (!intlRow) {
-      throw new Error('International Shares row not found');
+    if (markerIndex === -1) {
+      throw new Error('International Shares marker not found');
     }
     
-    // Get all <td> cells (percentage values)
-    const cells = Array.from(intlRow.querySelectorAll('td'));
+    debug.textContent = `✅ Found marker at position ${markerIndex}`;
     
-    // Find LAST non-zero percentage (remove % and parse)
+    // Find the START of the <tr> (go backwards from marker)
+    let trStart = html.lastIndexOf('<tr', markerIndex);
+    let trEnd = html.indexOf('</tr>', markerIndex);
+    
+    if (trStart === -1 || trEnd === -1) {
+      throw new Error('TR tags not found');
+    }
+    
+    // Extract the entire row
+    const rowHtml = html.substring(trStart, trEnd + 5);
+    debug.textContent += `\n\nROW HTML:\n${rowHtml.substring(0, 300)}...`;
+    
+    // Extract ALL percentages from the row (everything with % sign)
+    const percentMatches = rowHtml.match(/-?\d+\.?\d*%+/g) || [];
+    debug.textContent += `\n\nFOUND PERCENTS:\n${percentMatches.join('\n')}`;
+    
+    // Find LAST non-zero percentage
     let lastNonZero = null;
-    for (let i = cells.length - 1; i >= 0; i--) {
-      const cellText = cells[i].textContent.trim();
-      const value = parseFloat(cellText.replace('%', ''));
+    for (let i = percentMatches.length - 1; i >= 0; i--) {
+      const pctStr = percentMatches[i].replace('%', '');
+      const value = parseFloat(pctStr);
       
       if (!isNaN(value) && Math.abs(value) > 0.0001) {
         lastNonZero = value;
+        debug.textContent += `\n✅ LAST NON-ZERO: ${pctStr}%`;
         break;
       }
     }
@@ -91,25 +117,24 @@ async function scrapeData() {
     if (lastNonZero === null) {
       output.textContent = 'Currently no change.';
       output.style.color = '#666';
-      status.textContent = '✅ No recent movement';
+      status.textContent = '✅ All zeros in row';
     } else {
-      const pct = lastNonZero.toFixed(4);
-      output.textContent = `${pct}%`;
+      const displayPct = lastNonZero.toFixed(4);
+      output.textContent = `${displayPct}%`;
       output.style.color = lastNonZero >= 0 ? '#00aa44' : '#cc0000';
-      status.textContent = `✅ Latest: ${lastNonZero >= 0 ? '↑' : '↓'} ${Math.abs(lastNonZero).toFixed(4)}%`;
+      status.textContent = `✅ Latest move: ${lastNonZero >= 0 ? '↑' : '↓'}${Math.abs(lastNonZero).toFixed(4)}%`;
     }
     
   } catch (error) {
-    status.textContent = `❌ Error: ${error.message}`;
+    status.textContent = `❌ ${error.message}`;
     output.textContent = 'Failed';
     output.style.color = '#cc0000';
+    debug.textContent += `\nERROR: ${error.message}`;
   }
 }
 
-// Auto-run on load
+// Auto-run
 scrapeData();
-
-// Refresh button
 document.getElementById('refreshBtn').addEventListener('click', scrapeData);
 </script>
 
