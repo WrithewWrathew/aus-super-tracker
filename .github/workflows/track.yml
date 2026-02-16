@@ -1,0 +1,60 @@
+name: AusSuper Tracker
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # Every 5 minutes
+  workflow_dispatch:      # Manual trigger button
+
+jobs:
+  track:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Fetch CSV
+      run: |
+        curl -s -L -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
+          "https://www.australiansuper.com//api/graphs/dailyrates/download/?start=01/02/2026&end=08/02/2026&cumulative=False&superType=super&truncateDecimalPlaces=True&outputFilename=temp.csv" \
+          -o temp.csv
+        
+    - name: Install Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Parse CSV
+      run: |
+        npm install csv-parser
+        node -e "
+        const fs = require('fs');
+        const csv = require('csv-parser');
+        const results = [];
+        fs.createReadStream('temp.csv')
+          .pipe(csv())
+          .on('data', row => results.push(row))
+          .on('end', () => {
+            const headers = Object.keys(results[0] || {});
+            const intlIndex = headers.indexOf('International Shares');
+            let intlValue = 0;
+            for (let i = results.length - 1; i > 0; i--) {
+              const row = results[i];
+              const value = parseFloat(row['International Shares'] || 0);
+              if (Math.abs(value) > 0.0001) {
+                intlValue = value;
+                break;
+              }
+            }
+            fs.writeFileSync('data.json', JSON.stringify({
+              value: intlValue.toFixed(4),
+              timestamp: new Date().toISOString()
+            }));
+            console.log('✅ Saved:', intlValue.toFixed(4) + '%');
+          });
+        "
+        
+    - name: Commit data
+      run: |
+        git config user.name "AusSuper Bot"
+        git config user.email "bot@example.com"
+        git add data.json
+        git commit -m "Update International Shares: $(cat data.json | grep value)" || exit 0
+        git push
