@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>AusSuper International Shares (CSV Auto-Refresh)</title>
+<title>AusSuper International Shares (Auto CSV)</title>
 <style>
   body { 
     font-family: Arial, sans-serif; 
@@ -32,119 +32,141 @@
     margin: 10px; 
   }
   button:hover { background: #106ebe; }
+  button:disabled { background: #ccc; }
   .status { font-size: 1.2em; color: #666; margin: 15px 0; }
-  .instructions { 
-    background: #e7f3ff; 
-    padding: 20px; 
-    border-radius: 10px; 
-    margin: 20px 0; 
-    font-size: 1.1em;
-  }
-  input[type="file"] { 
-    margin: 20px 0; 
-    padding: 10px; 
-    font-size: 1.1em;
+  #debug { 
+    font-size: 0.9em; 
+    color: #333; 
+    background: #f8f8f8; 
+    padding: 15px; 
+    border-radius: 8px; 
+    margin: 10px 0;
+    max-height: 150px;
+    overflow-y: auto;
+    font-family: monospace;
+    text-align: left;
   }
 </style>
 </head>
 <body>
 
 <h1>🤑 AusSuper International Shares</h1>
-
-<div class="instructions">
-  <strong>📥 Step 1:</strong> Download fresh <a href="https://www.australiansuper.com//api/graphs/dailyrates/download/?start=01/02/2026&end=08/02/2026&cumulative=False&superType=super&truncateDecimalPlaces=True&outputFilename=temp.csv" target="_blank">temp.csv</a><br>
-  <strong>📂 Step 2:</strong> Click "Load CSV" below → **Auto-refreshes every 5 minutes!**
-</div>
-
-<input type="file" id="fileInput" accept=".csv">
-<div class="status" id="status">Upload temp.csv to start tracking</div>
+<div class="status" id="status">Streaming CSV via working proxies...</div>
 <div id="output">⏳</div>
-<button id="refreshBtn" disabled>🔄 Re-Scan Same File</button>
-<div id="lastUpdated"></div>
+<div id="debug"></div>
+<button id="refreshBtn" disabled>🔄 Force Refresh</button>
 
 <script>
-let lastFile = null;
-let refreshInterval = null;
+const CSV_URL = 'https://www.australiansuper.com//api/graphs/dailyrates/download/?start=01/02/2026&end=08/02/2026&cumulative=False&superType=super&truncateDecimalPlaces=True&outputFilename=temp.csv';
 
-function processCsv(text) {
-  const output = document.getElementById('output');
-  const status = document.getElementById('status');
-  const lastUpdated = document.getElementById('lastUpdated');
+const WORKING_PROXIES = [
+  'https://corsproxy.io/?' + encodeURIComponent(CSV_URL),
+  'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(CSV_URL)
+];
+
+let currentAttempt = 0;
+
+async function tryProxy(proxyUrl) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 45000); // 45s timeout
   
-  const rows = text.replace(/\r\n?/g, '\n').trim().split('\n');
-  if (rows.length < 2) {
-    output.textContent = 'No data in CSV';
-    return;
+  try {
+    const response = await fetch(proxyUrl, { 
+      signal: controller.signal,
+      headers: { 'User-Agent': 'Mozilla/5.0' }
+    });
+    clearTimeout(timeout);
+    
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return await response.text();
+  } catch (e) {
+    clearTimeout(timeout);
+    throw e;
   }
+}
+
+function parseCsv(csvText) {
+  const rows = csvText.replace(/\r\n?/g, '\n').trim().split('\n');
+  if (rows.length < 2) throw new Error('No data rows');
   
   const headers = rows[0].split(',').map(h => h.trim());
   const intlIndex = headers.indexOf('International Shares');
+  if (intlIndex === -1) throw new Error('No International Shares column');
   
-  if (intlIndex === -1) {
-    output.textContent = 'International Shares column missing';
-    return;
-  }
-  
-  // Find LAST row with NON-ZERO data
-  let lastIntlValue = null;
+  // Find LAST row with real data
   for (let i = rows.length - 1; i > 0; i--) {
     const cols = rows[i].split(',').map(c => c.trim());
-    if (cols.length > intlIndex) {
-      const intlValue = parseFloat(cols[intlIndex]);
-      const hasRealData = cols.slice(1).some(c => {
-        const num = parseFloat(c);
-        return !isNaN(num) && Math.abs(num) > 0.0001;
-      });
-      
-      if (hasRealData) {
-        lastIntlValue = intlValue;
-        break;
-      }
+    if (cols.length <= intlIndex) continue;
+    
+    const intlValue = parseFloat(cols[intlIndex]);
+    const hasRealData = cols.slice(1).some(c => {
+      const num = parseFloat(c);
+      return !isNaN(num) && Math.abs(num) > 0.0001;
+    });
+    
+    if (hasRealData) {
+      return intlValue;
     }
   }
+  return 0;
+}
+
+async function fetchData() {
+  const status = document.getElementById('status');
+  const output = document.getElementById('output');
+  const debug = document.getElementById('debug');
+  const refreshBtn = document.getElementById('refreshBtn');
   
-  lastUpdated.textContent = `Last checked: ${new Date().toLocaleTimeString()}`;
+  refreshBtn.disabled = true;
+  status.textContent = `⏳ Proxy ${currentAttempt + 1}/2 (wait up to 45s)...`;
+  output.textContent = '⏳';
+  debug.innerHTML = `Trying: ${WORKING_PROXIES[currentAttempt]}<br>`;
   
-  if (lastIntlValue === null || Math.abs(lastIntlValue) < 0.0001) {
-    output.textContent = 'Currently no change.';
-    output.style.color = '#666';
-    status.textContent = '✅ No recent movement detected';
-  } else {
-    const pct = lastIntlValue.toFixed(4);
-    output.textContent = `${pct}%`;
-    output.style.color = lastIntlValue >= 0 ? '#00aa44' : '#cc0000';
-    status.textContent = `✅ Latest: ${lastIntlValue >= 0 ? '↑' : '↓'}${Math.abs(lastIntlValue).toFixed(4)}%`;
+  try {
+    const csvText = await tryProxy(WORKING_PROXIES[currentAttempt]);
+    debug.innerHTML += `✅ CSV fetched (${csvText.length} chars)<br>`;
+    
+    const intlValue = parseCsv(csvText);
+    debug.innerHTML += `✅ International Shares: ${intlValue}<br>`;
+    
+    if (Math.abs(intlValue) < 0.0001) {
+      output.textContent = 'Currently no change.';
+      output.style.color = '#666';
+      status.textContent = '✅ No recent movement';
+    } else {
+      const pct = intlValue.toFixed(4);
+      output.textContent = `${pct}%`;
+      output.style.color = intlValue >= 0 ? '#00aa44' : '#cc0000';
+      status.textContent = `✅ ${intlValue >= 0 ? '↑' : '↓'}${Math.abs(intlValue).toFixed(4)}%`;
+    }
+    
+    refreshBtn.disabled = false;
+    currentAttempt = 0; // Reset for next manual refresh
+    
+  } catch (error) {
+    debug.innerHTML += `❌ ${error.message}<br>`;
+    
+    currentAttempt++;
+    if (currentAttempt < WORKING_PROXIES.length) {
+      setTimeout(() => fetchData(), 1000); // Try next proxy
+    } else {
+      status.textContent = '❌ Both proxies failed - retrying in 2 min...';
+      output.textContent = 'Retry...';
+      output.style.color = '#cc0000';
+      refreshBtn.disabled = false;
+      currentAttempt = 0;
+      
+      // Auto-retry every 2 minutes
+      setTimeout(fetchData, 120000);
+    }
   }
 }
 
-function readFile(file) {
-  const reader = new FileReader();
-  reader.onload = (e) => {
-    processCsv(e.target.result);
-    document.getElementById('refreshBtn').disabled = false;
-  };
-  reader.readAsText(file);
-}
+// Auto-start immediately + every 5 minutes
+fetchData();
+setInterval(fetchData, 5 * 60 * 1000);
 
-document.getElementById('fileInput').addEventListener('change', (e) => {
-  const file = e.target.files[0];
-  if (file) {
-    lastFile = file;
-    
-    // Clear previous auto-refresh
-    if (refreshInterval) clearInterval(refreshInterval);
-    
-    // Start 5-minute auto-refresh
-    readFile(file);
-    refreshInterval = setInterval(() => readFile(lastFile), 5 * 60 * 1000);
-    
-    document.getElementById('status').textContent = '✅ Auto-refresh every 5 min';
-  }
-});
-
-document.getElementById('refreshBtn').addEventListener('click', () => {
-  if (lastFile) readFile(lastFile);
-});
+document.getElementById('refreshBtn').addEventListener('click', fetchData);
 </script>
 
 </body>
