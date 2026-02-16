@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "playwright-core": "^1.47.0"
-  },
-  "scripts": {
-    "deploy": "vercel"
-  }
-}
