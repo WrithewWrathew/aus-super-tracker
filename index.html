@@ -2,53 +2,69 @@
 <html>
 <head>
 <meta charset="UTF-8">
-<title>Aus Super Tracker</title>
-
+<title>AustralianSuper CSV Viewer</title>
 <style>
-
-body {
-  font-family: Arial;
-  text-align: center;
-  margin-top: 60px;
-}
-
-#value {
-  font-size: 48px;
-  font-weight: bold;
-}
-
+  body { font-family: Arial; margin: 20px; }
+  table { border-collapse: collapse; width: 100%; }
+  th, td { border: 1px solid #ccc; padding: 4px; text-align: center; }
+  th { background: #f4f4f4; }
+  #loading { font-weight: bold; margin-bottom: 10px; }
+  button { margin-bottom: 10px; padding: 6px 12px; }
 </style>
-
 </head>
-
 <body>
 
-<h2>International Shares Daily Return</h2>
-
-<div id="value">Loading...</div>
+<h2>AustralianSuper Daily Rates CSV</h2>
+<div id="loading"></div>
+<button onclick="loadCSV()">Refresh</button>
+<div id="tableContainer"></div>
 
 <script>
+async function loadCSV() {
+  const loading = document.getElementById("loading");
+  const container = document.getElementById("tableContainer");
+  container.innerHTML = "";
+  loading.innerText = "Fetching CSV... please wait 3-5 seconds";
 
-fetch("intl.json")
-  .then(r => {
-    if(!r.ok) throw new Error("Cannot load data");
-    return r.json();
-  })
-  .then(data => {
+  try {
+    const res = await fetch("/api/fetchCsv");
+    if (!res.ok) throw new Error("Failed to fetch CSV: " + res.status);
 
-    document.getElementById("value").innerText =
-      data.value + "% (" + data.date + ")";
+    const text = await res.text();
 
-  })
-  .catch(err => {
+    loading.innerText = "";
 
-    document.getElementById("value").innerText =
-      "Unable to load data";
+    // Convert CSV to array
+    const rows = text.split("\n").map(r => r.trim()).filter(r => r);
+    if (rows.length === 0) {
+      container.innerText = "No data found";
+      return;
+    }
 
+    // Build HTML table
+    const table = document.createElement("table");
+
+    rows.forEach((row, i) => {
+      const tr = document.createElement("tr");
+      const cols = row.split(",").map(c => c.trim());
+      cols.forEach(col => {
+        const cell = i === 0 ? document.createElement("th") : document.createElement("td");
+        cell.innerText = col;
+        tr.appendChild(cell);
+      });
+      table.appendChild(tr);
+    });
+
+    container.appendChild(table);
+
+  } catch (err) {
+    loading.innerText = "Error fetching CSV: " + err.message;
     console.error(err);
+  }
+}
 
-  });
-
+// Initial load
+loadCSV();
 </script>
 
 </body>
